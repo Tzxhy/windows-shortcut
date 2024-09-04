@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -28,31 +30,33 @@ func main() {
 	var lastYChan = make(chan int16)
 
 	hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-		// fmt.Println("numbers: ", runtime.NumGoroutine())
+		fmt.Println("numbers: ", runtime.NumGoroutine())
 		if e.Button == 3 {
-			if lastClearTimer != nil {
+			rwMutex.RLock()
+			if middlePressed {
 				if lastClearTimer.Stop() {
 					lastClearTimerChan <- 1
 				}
 			}
+			rwMutex.RUnlock()
 			startX = e.X
 			startY = e.Y
+			rwMutex.Lock()
 			middlePressed = true
+			rwMutex.Unlock()
 			go func() {
 				// 定时器关闭
-				rwMutex.Lock()
+
 				lastClearTimer = time.NewTimer(time.Millisecond * 400)
-				rwMutex.Unlock()
 				lastX := int16(0)
 				lastY := int16(0)
 				loop := true
 				var exit = func() {
 					middlePressed = false
-
 					go func() {
+						// 10毫秒，怎么也接收完当前的xy通道值了
 						time.Sleep(time.Millisecond * 10)
 						loop = false
-						lastClearTimer = nil
 					}()
 
 				}
@@ -100,14 +104,12 @@ func main() {
 	})
 
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
+		rwMutex.RLock()
 		if middlePressed {
-			rwMutex.RLock()
-			if lastClearTimer != nil {
-				lastXChan <- e.X
-				lastYChan <- e.Y
-			}
-			rwMutex.RUnlock()
+			lastXChan <- e.X
+			lastYChan <- e.Y
 		}
+		rwMutex.RUnlock()
 	})
 
 	s := hook.Start()
